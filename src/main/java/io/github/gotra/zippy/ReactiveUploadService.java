@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.server.ServerRequest;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -36,11 +37,28 @@ public class ReactiveUploadService {
      * @return a flux of results - one element per uploaded file
      */
     @RequestMapping(method = RequestMethod.POST, consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public void uploadHandler(@RequestBody Flux<DataBuffer> dataBufferFlux) {
-       dataBufferFlux.reduce(new InputStream() {
-           public int read() { return -1; }
-       }, (s: InputStream, d: DataBuffer) -> new SequenceInputStream(s, d.asInputStream())
-).flatMap(inputStream -> {});
+    public Mono<Void> uploadHandler(@RequestBody Flux<DataBuffer> dataBufferFlux) {
+        AtomicInteger atomicInt = new AtomicInteger(0);
+        return dataBufferFlux.takeUntil(s -> { return (atomicInt.get() > 100000); })
+                .doOnNext(dataBuffer -> {
+
+                    int count = dataBuffer.readableByteCount();
+                    atomicInt.getAndAdd(count);
+                    System.out.println(atomicInt.get());
+
+
+
+                    byte[] bytes = new byte[count];
+                    dataBuffer.read(bytes);
+
+                    // create a file channel compatible byte buffer
+                    final ByteBuffer byteBuffer = ByteBuffer.allocate(count);
+                    byteBuffer.put(bytes);
+                    byteBuffer.flip();
+
+        }).then();
+
+
 
     }
 
