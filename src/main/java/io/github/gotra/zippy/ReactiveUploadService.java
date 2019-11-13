@@ -1,15 +1,14 @@
 package io.github.gotra.zippy;
 
+import com.fasterxml.jackson.databind.util.JSONPObject;
+import io.github.gotra.zippy.model.JsonResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.http.codec.multipart.Part;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
@@ -28,6 +27,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ReactiveUploadService {
 
     Logger LOGGER = LoggerFactory.getLogger(ReactiveUploadService.class);
+    private long uploadlimit = 1024*1024*1;
+
 
     /**
      * upload handler method, mapped to POST. Like any file upload handler it consumes MULTIPART_FORM_DATA.
@@ -36,14 +37,26 @@ public class ReactiveUploadService {
      * @param parts a flux providing all part contained in the MULTIPART_FORM_DATA request
      * @return a flux of results - one element per uploaded file
      */
-    @RequestMapping(method = RequestMethod.POST, consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public Mono<Void> uploadHandler(@RequestBody Flux<DataBuffer> dataBufferFlux) {
+    @RequestMapping(method = RequestMethod.POST, consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+
+    public  Mono<JsonResponse> uploadHandler(@RequestHeader("Content-Length") long nmBytes, @RequestBody Flux<DataBuffer> dataBufferFlux) {
         AtomicInteger atomicInt = new AtomicInteger(0);
-        return dataBufferFlux.takeUntil(s -> { return (atomicInt.get() > 100000); })
+        if (nmBytes > uploadlimit) {
+
+            return Mono.just(new JsonResponse(JsonResponse.Status.FAILURE,null,new String("limit too high")));
+        }
+        else {
+
+            return dataBufferFlux.takeUntil(s -> { return (atomicInt.get() > uploadlimit); })
                 .doOnNext(dataBuffer -> {
 
                     int count = dataBuffer.readableByteCount();
                     atomicInt.getAndAdd(count);
+                    try {
+                        Thread.sleep(1000l);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                     System.out.println(atomicInt.get());
 
 
@@ -56,7 +69,28 @@ public class ReactiveUploadService {
                     byteBuffer.put(bytes);
                     byteBuffer.flip();
 
-        }).then();
+        }).then(Mono.just(new JsonResponse(JsonResponse.Status.SUCCESS,new String("ok!"),null)));
+
+
+        }
+//        return dataBufferFlux.takeUntil(s -> { return (atomicInt.get() > 100000); })
+//                .doOnNext(dataBuffer -> {
+//
+//                    int count = dataBuffer.readableByteCount();
+//                    atomicInt.getAndAdd(count);
+//                    System.out.println(atomicInt.get());
+//
+//
+//
+//                    byte[] bytes = new byte[count];
+//                    dataBuffer.read(bytes);
+//
+//                    // create a file channel compatible byte buffer
+//                    final ByteBuffer byteBuffer = ByteBuffer.allocate(count);
+//                    byteBuffer.put(bytes);
+//                    byteBuffer.flip();
+//
+//        }).then();
 
 
 
